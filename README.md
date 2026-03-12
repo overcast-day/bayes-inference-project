@@ -9,7 +9,7 @@ Bayesian methods will be used to compare how different inference approaches affe
 
 ## Scientific Question (Bayesian Perspective)
 
-**How do different Bayesian inference methods — specifically Hamiltonian Monte Carlo (HMC) and Variational Inference (VI) — affect posterior estimation and uncertainty quantification in medical diagnostic prediction models?**
+**How do different Bayesian inference methods — specifically Metropolis-Hastings MCMC method and Variational Inference (VI) — affect posterior estimation and uncertainty quantification in medical diagnostic prediction models?**
 
 ---
 
@@ -36,7 +36,7 @@ https://www.kaggle.com/datasets/fedesoriano/hepatitis-c-dataset
 - Apply Bayesian inference to medical diagnostic prediction models
 - Construct Bayesian logistic regression models
 - Compare two posterior inference approaches:
-  - Hamiltonian Monte Carlo (HMC)
+  - Metropolis-Hastings MCMC method
   - Variational Inference (VI)
 - Evaluate differences in posterior distributions and uncertainty estimates
 
