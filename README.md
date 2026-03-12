@@ -1,15 +1,15 @@
 # STAT 405 – Final Project
 
 ## Project Overview
-This project applies Bayesian inference to a real-world medical prediction problem using clinical datasets. The goal is to analyze how different Bayesian inference algorithms influence posterior estimates and uncertainty quantification when modeling medical risk factors.
+This project applies Bayesian inference to a real-world medical prediction problem using clinical datasets. The goal is to analyze how different Bayesian inference algorithms influence the **calibration of probabilistic predictions** when modeling medical risk factors.
 
-Bayesian methods will be used to compare how different inference approaches affect probabilistic conclusions in medical diagnostic prediction models.
+Bayesian methods will be used to compare how different inference approaches affect the reliability of predicted disease probabilities in medical diagnostic prediction models.
 
 ---
 
 ## Scientific Question (Bayesian Perspective)
 
-**How do different Bayesian inference methods (Metropolis-Hastings MCMC method and Variational Inference) influence the calibration of probabilistic predictions in medical diagnostic models?**
+**How do different Bayesian inference methods (Metropolis–Hastings Markov Chain Monte Carlo and Variational Inference) influence the calibration of probabilistic predictions in medical diagnostic models?**
 
 ---
 
@@ -33,12 +33,12 @@ https://www.kaggle.com/datasets/fedesoriano/hepatitis-c-dataset
 ---
 
 ## Planned Methodology
-- Apply Bayesian inference to medical diagnostic prediction models
-- Construct Bayesian logistic regression models
-- Compare two posterior inference approaches:
-  - Metropolis-Hastings MCMC method
+- Construct Bayesian logistic regression models for disease prediction
+- Estimate posterior distributions using two inference approaches:
+  - Metropolis–Hastings Markov Chain Monte Carlo (MH-MCMC)
   - Variational Inference (VI)
-- Evaluate differences in posterior distributions and uncertainty estimates
-
----
-
+- Generate probabilistic predictions for patients
+- Evaluate the **calibration of predicted probabilities** using tools such as:
+  - calibration plots
+  - reliability diagrams
+  - Brier score
