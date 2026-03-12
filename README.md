@@ -9,12 +9,9 @@ Bayesian methods will be used to compare how different inference approaches affe
 
 ## Scientific Question (Bayesian Perspective)
 
-<<<<<<< HEAD
-**How do different Bayesian inference methods (Metropolis-Hastings MCMC method and Variational Inference) influence the calibration of probabilistic predictions in medical diagnostic models?
-**
+
 =======
-**How do different Bayesian inference methods — specifically Metropolis-Hastings MCMC method and Variational Inference (VI) — affect posterior estimation and uncertainty quantification in medical diagnostic prediction models?**
->>>>>>> 24318b37a18ae0520bd82da370a51190e5d4d24b
+**How do different Bayesian inference methods (Metropolis-Hastings MCMC method and Variational Inference) influence the calibration of probabilistic predictions in medical diagnostic models?**
 
 ---
 
