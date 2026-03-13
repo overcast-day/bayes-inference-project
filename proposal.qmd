@@ -1,0 +1,65 @@
+---
+title: "STAT 405 Project Proposal: Medical Diagnostic Model Calibration"
+authors:
+  - name: Mohammed Fouzan Hashmi
+  - name: Giuliana Kim
+  - name: Diana Liang
+format: pdf
+---
+**Github:** [https://github.com/overcast-day/bayes-inference-project](https://github.com/overcast-day/bayes-inference-project)
+
+# Project Overview
+This project applies Bayesian inference to a real-world medical prediction problem using clinical datasets. The goal is to analyze how different Bayesian inference algorithms influence the *calibration of probabilistic predictions* when modeling medical risk factors.
+
+Bayesian methods will be used to compare how different inference approaches affect the reliability of predicted disease probabilities in medical diagnostic prediction models.
+
+# Scientific Question (Bayesian Perspective)
+How do different Bayesian inference methods (Metropolis–Hastings Markov Chain Monte Carlo and Variational Inference) influence the calibration of probabilistic predictions in medical diagnostic models?
+
+---
+
+# Datasets
+## Main Dataset
+Heart Failure Prediction: [https://www.kaggle.com/datasets/fedesoriano/heart-failure-prediction](https://www.kaggle.com/datasets/fedesoriano/heart-failure-prediction)
+```{r}
+#| label: heart-head
+#| fig-cap: "data structure of Heart Failure Prediction dataset"
+#| warning: false
+
+heart_df = read.csv("./data/heart.csv")
+head(heart_df)
+```
+
+## Back-up Dataset
+Hepatitis C: [https://www.kaggle.com/datasets/fedesoriano/hepatitis-c-dataset](https://www.kaggle.com/datasets/fedesoriano/hepatitis-c-dataset)
+```{r}
+#| label: hep-head
+#| fig-cap: "data structure of Hepatitis C dataset"
+#| warning: false
+
+hep_df = read.csv("./data/HepatitisCdata.csv")
+head(hep_df)
+```
+
+---
+
+# Planned Methodology
+- Construct Bayesian logistic regression models for disease prediction
+- Estimate posterior distributions using two inference approaches:
+  - Metropolis–Hastings Markov Chain Monte Carlo (MH-MCMC)
+  - Variational Inference (VI)
+- Generate probabilistic predictions for patients
+- Evaluate the *calibration of predicted probabilities* using tools such as:
+  - calibration plots
+  - reliability diagrams
+  - Brier score
+
+---
+
+# Team Plan
+
+## Expected Contributions of Team Members
+Giuliana will work on the Metropolis-Hastings MCMC inferance method to answer the research question, while Diana and Fouzan will work on the more complex Variational Inference method. All three members will contribute to writing literature review and drafting the final report.
+
+## Reproducibility Plan
+All code used to generate analyses, figures, and results will be maintained in a public GitHub repository. Each team member will contribute commits documenting their work to ensure reproducibility and transparency here: [https://github.com/overcast-day/bayes-inference-project](https://github.com/overcast-day/bayes-inference-project)
