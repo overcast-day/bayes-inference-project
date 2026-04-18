@@ -150,3 +150,114 @@ brier
 #“The VI-based model achieved a Brier score of 0.118, indicating strong 
 #predictive performance and well-calibrated probability estimates.”
 
+
+
+# --------------------------------
+# Model 2 additional features
+# --------------------------------
+df$Age2 <- df$Age_std^2
+df$Age_MaxHR <- df$Age_std * df$MaxHR_std
+
+
+#New design matrix
+X2 <- as.matrix(df[, c(
+  "Age_std",
+  "Sex_num",
+  "MaxHR_std",
+  "Oldpeak_std",
+  "ExerciseAngina_num",
+  "ST_Flat",
+  "ST_Down",
+  "Age2",
+  "Age_MaxHR"
+)])
+
+y2 <- df$y
+
+N2 <- nrow(X2)
+K2 <- ncol(X2)
+
+cat("N2 =", N2, "\n")
+cat("K2 =", K2, "\n")
+
+#Stan list for model 2
+
+stan_data2 <- list(
+  N = N2,
+  K = K2,
+  X = X2,
+  y = as.integer(y2)
+)
+
+# Model 2
+fit_vi_2 <- mod$variational(
+  data = stan_data2,
+  seed = 123,
+  algorithm = "meanfield",
+  draws = 2000
+)
+
+#Extracting posterior draws
+draws_df2 <- fit_vi_2$draws(format = "df")
+nrow(draws_df2)
+head(draws_df2)
+
+#Posterior summary for model 2
+summary2 <- data.frame(
+  term = c("alpha", paste0("beta[", 1:9, "]")),
+  mean = c(
+    mean(draws_df2$alpha),
+    sapply(1:9, function(i) mean(draws_df2[[paste0("beta[", i, "]")]]))
+  ),
+  sd = c(
+    sd(draws_df2$alpha),
+    sapply(1:9, function(i) sd(draws_df2[[paste0("beta[", i, "]")]]))
+  )
+)
+
+coef_names2 <- c(
+  "Intercept",
+  "Age_std",
+  "Sex_num",
+  "MaxHR_std",
+  "Oldpeak_std",
+  "ExerciseAngina_num",
+  "ST_Flat",
+  "ST_Down",
+  "Age2",
+  "Age_MaxHR"
+)
+
+summary2$variable <- coef_names2
+summary2 <- summary2[, c("variable", "mean", "sd")]
+
+print(summary2)
+
+#Predicting probabilities for model 2
+beta_mat2 <- as.matrix(draws_df2[, paste0("beta[", 1:9, "]")])
+
+posterior_linpred2 <- sweep(
+  beta_mat2 %*% t(X2),
+  1,
+  draws_df2$alpha,
+  "+"
+)
+
+posterior_prob2 <- 1 / (1 + exp(-posterior_linpred2))
+
+p_hat_vi_2 <- colMeans(posterior_prob2)
+
+head(p_hat_vi_2)
+summary(p_hat_vi_2)
+
+#Brier score for model 2
+brier2 <- mean((p_hat_vi_2 - y2)^2)
+brier2
+
+#Comparing brier scores
+cat("Model 1 Brier:", brier, "\n")
+cat("Model 2 Brier:", brier2, "\n")
+
+#“The extended model including nonlinear and interaction terms resulted in only 
+#marginal improvement in predictive performance, suggesting that the simpler 
+#model already captures the key structure in the data.”
