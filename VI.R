@@ -5,73 +5,148 @@ suppressPackageStartupMessages(require(grid))
 suppressPackageStartupMessages(require(gridExtra))
 verbose=FALSE
 
-data = read.csv("~/bayes-inference-project/data/heart.csv")
-head(data)
 
-# Clean data
-heart_df <- na.omit(data)
+#load the dataset
+df <- read.csv("data/heart.csv", stringsAsFactors = FALSE)
+str(df)
+head(df)
 
-# EDA
-set.seed(1)
-nvar = length(heart_df)
-cat_list = list("Sex", "ChestPainType", "RestingECG", "ExerciseAngina", "ST_Slope")
-plot_list <- lapply(names(heart_df)[1:nvar], function(col){
-  if (col %in% cat_list){
-    t <- tableGrob(table(heart_df$HeartDisease, heart_df[[col]]))
-    arrangeGrob(t, 
-                top = textGrob(col, gp=gpar(fontsize=12)),
-                left = textGrob("Has Heart Disease?"),
-                heights = unit(c(0.5, 0), "npc"),
-                widths = unit(c(0.3, 0), "npc"))
-  } else if(col != "HeartDisease"){
-    ggplot(heart_df, aes(x = .data[[col]], y = HeartDisease)) +
-      geom_point() +
-      labs(
-        x = col,
-        y = "Has Heart Disease?")
-  } else {
-    return (NULL)
-  }
-})
-plot_list <- plot_list[!sapply(plot_list, is.null)]
-grid.arrange(grobs = plot_list, ncol = 2)
+#Data Preprocessing
 
-# Preprocess
-heart_df <- heart_df %>%
-  mutate(ST_Slope = case_when(
-    ST_Slope == "Down"    ~ -1,
-    ST_Slope == "Flat" ~ 0,
-    ST_Slope == "Up"   ~ 1
-  ))
-# 0 is No and 1 as Yes
-heart_df$ExerciseAngina <- as.numeric(as.factor(heart_df$ExerciseAngina))-1
-# 0 is Female and 1 as Male
-heart_df <- heart_df %>%
-  mutate(Sex = case_when(
-    Sex == "F" ~ 0,
-    Sex == "M"   ~ 1
-  ))
+# Binary encoding
+df$Sex_num <- ifelse(df$Sex == "M", 1, 0)
+df$ExerciseAngina_num <- ifelse(df$ExerciseAngina == "Y", 1, 0)
 
-# Model 1 (Simple)
-mod = cmdstan_model("~/bayes-inference-project/VI_Model1.stan")
-fit.variational = mod$variational(
-  seed = 1,
-  refresh = 50,
-  output_dir = "~/stan_out",
-  algorithm = "meanfield",
-  output_samples = 1000,
-  data = list(
-    n_patients = length(heart_df$HeartDisease),
-    y = heart_df$HeartDisease,
-    age = heart_df$Age,
-    maxHR = heart_df$MaxHR,
-    oldPeak = heart_df$Oldpeak,
-    sex = heart_df$Sex,
-    exAngina = heart_df$ExerciseAngina,
-    stSlope1 = heart_df$ST_Slope,
-    stSlope2 = heart_df$ST_Slope
-  )        
+# ST_Slope dummies
+# Use "Up" as the reference category
+df$ST_Flat <- ifelse(df$ST_Slope == "Flat", 1, 0)
+df$ST_Down <- ifelse(df$ST_Slope == "Down", 1, 0)
+
+# Standardize continuous predictors
+df$Age_std <- as.numeric(scale(df$Age))
+df$MaxHR_std <- as.numeric(scale(df$MaxHR))
+df$Oldpeak_std <- as.numeric(scale(df$Oldpeak))
+
+# Response
+df$y <- df$HeartDisease
+
+#data check
+summary(df[, c("Age_std", "MaxHR_std", "Oldpeak_std",
+               "Sex_num", "ExerciseAngina_num",
+               "ST_Flat", "ST_Down", "y")])
+
+#checking no Na
+colSums(is.na(df[, c("Age_std", "MaxHR_std", "Oldpeak_std",
+                     "Sex_num", "ExerciseAngina_num",
+                     "ST_Flat", "ST_Down", "y")]))
+
+# Building Model 1 Matrix
+X1 <- as.matrix(df[, c("Age_std",
+                       "Sex_num",
+                       "MaxHR_std",
+                       "Oldpeak_std",
+                       "ExerciseAngina_num",
+                       "ST_Flat",
+                       "ST_Down")])
+
+y <- df$y
+
+N <- nrow(X1)
+K <- ncol(X1)
+
+dim(X1)
+length(y)
+
+
+#Stan Data list
+stan_data1 <- list(
+  N = N,
+  K = K,
+  X = X1,
+  y = y
 )
 
-# Error: Chain 1 stan::variational::advi::adapt_eta: All proposed step-sizes failed. 
-# Your model may be either severely ill-conditioned or misspecified.
+#Compiling the model
+mod <- cmdstan_model("stan/VI_Model1.stan")
+
+#Fitting the VI
+fit_vi_1 <- mod$variational(
+  data = stan_data1,
+  seed = 123,
+  algorithm = "meanfield",
+  draws = 2000
+)
+
+#Extracting posteriror draws
+library(posterior)
+
+draws_df <- fit_vi_1$draws(format = "df")
+
+head(draws_df)
+
+
+#Posterior summary
+summary <- data.frame(
+  term = c("alpha", paste0("beta[", 1:7, "]")),
+  mean = c(
+    mean(draws_df$alpha),
+    sapply(1:7, function(i) mean(draws_df[[paste0("beta[", i, "]")]]))
+  ),
+  sd = c(
+    sd(draws_df$alpha),
+    sapply(1:7, function(i) sd(draws_df[[paste0("beta[", i, "]")]]))
+  )
+)
+
+print(summary)
+
+
+#Labelling variables
+coef_names <- c(
+  "Intercept",
+  "Age_std",
+  "Sex_num",
+  "MaxHR_std",
+  "Oldpeak_std",
+  "ExerciseAngina_num",
+  "ST_Flat",
+  "ST_Down"
+)
+
+summary$variable <- coef_names
+summary <- summary[, c("variable", "mean", "sd")]
+
+print(summary)
+
+
+#Generating Predicted probabilities
+
+# Extract beta matrix
+beta_mat <- as.matrix(draws_df[, paste0("beta[", 1:7, "]")])
+
+# Linear predictor
+posterior_linpred <- sweep(
+  beta_mat %*% t(X1),
+  1,
+  draws_df$alpha,
+  "+"
+)
+
+# Convert to probabilities
+posterior_prob <- 1 / (1 + exp(-posterior_linpred))
+
+# Posterior mean predicted probability
+p_hat_vi_1 <- colMeans(posterior_prob)
+
+# Check
+head(p_hat_vi_1)
+summary(p_hat_vi_1)
+
+#Brier score
+brier <- mean((p_hat_vi_1 - y)^2)
+brier
+
+#Interpretation of Brier score
+#“The VI-based model achieved a Brier score of 0.118, indicating strong 
+#predictive performance and well-calibrated probability estimates.”
+
