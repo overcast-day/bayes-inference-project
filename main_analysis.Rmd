@@ -44,6 +44,7 @@ plot_list <- lapply(names(heart_df)[1:nvar], function(col){
 plot_list <- plot_list[!sapply(plot_list, is.null)]
 grid.arrange(grobs = plot_list, ncol = 2)
 ```
+
 # Preprocess data and make design matrices
 
 ```{r}
