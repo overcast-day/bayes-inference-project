@@ -261,3 +261,54 @@ cat("Model 2 Brier:", brier2, "\n")
 #“The extended model including nonlinear and interaction terms resulted in only 
 #marginal improvement in predictive performance, suggesting that the simpler 
 #model already captures the key structure in the data.”
+
+
+#Calibration plot for Model 1
+library(ggplot2)
+
+# Create bins
+df_cal <- data.frame(
+  p_hat = p_hat_vi_1,
+  y = y
+)
+
+df_cal$bin <- cut(df_cal$p_hat, breaks = seq(0, 1, by = 0.1), include.lowest = TRUE)
+
+calibration <- df_cal %>%
+  group_by(bin) %>%
+  summarise(
+    mean_pred = mean(p_hat),
+    actual = mean(y),
+    count = n()
+  )
+
+# Plot
+ggplot(calibration, aes(x = mean_pred, y = actual)) +
+  geom_point(size = 3) +
+  geom_line() +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
+  labs(
+    title = "Calibration Plot (VI - Model 1)",
+    x = "Predicted Probability",
+    y = "Observed Frequency"
+  ) +
+  theme_minimal()
+
+
+#POsterior distribution plot
+library(bayesplot)
+
+# Convert to matrix
+posterior_mat <- as.matrix(draws_df[, c("alpha", paste0("beta[", 1:7, "]"))])
+
+mcmc_areas(posterior_mat)
+
+#Histogram of predicted probabilities
+ggplot(data.frame(p_hat = p_hat_vi_1), aes(x = p_hat)) +
+  geom_histogram(bins = 30) +
+  labs(
+    title = "Distribution of Predicted Probabilities (VI)",
+    x = "Predicted Probability",
+    y = "Count"
+  ) +
+  theme_minimal()
