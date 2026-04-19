@@ -312,3 +312,35 @@ ggplot(data.frame(p_hat = p_hat_vi_1), aes(x = p_hat)) +
     y = "Count"
   ) +
   theme_minimal()
+
+
+#Calibration all
+df_cal1 <- data.frame(p_hat = p_hat_vi_1, y = y, model = "Model 1")
+df_cal2 <- data.frame(p_hat = p_hat_vi_2, y = y2, model = "Model 2")
+
+df_cal_all <- rbind(df_cal1, df_cal2)
+
+df_cal_all$bin <- cut(df_cal_all$p_hat, breaks = seq(0, 1, by = 0.1), include.lowest = TRUE)
+
+library(dplyr)
+
+calibration_all <- df_cal_all %>%
+  group_by(model, bin) %>%
+  summarise(
+    mean_pred = mean(p_hat),
+    actual = mean(y),
+    .groups = "drop"
+  )
+
+library(ggplot2)
+
+ggplot(calibration_all, aes(x = mean_pred, y = actual, color = model)) +
+  geom_point(size = 3) +
+  geom_line() +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
+  labs(
+    title = "Calibration Comparison (Model 1 vs Model 2)",
+    x = "Predicted Probability",
+    y = "Observed Frequency"
+  ) +
+  theme_minimal()
