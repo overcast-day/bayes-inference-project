@@ -1,13 +1,52 @@
 ---
-title: "MH_MCMC"
+title: "STAT 405: Main Analysis"
 output: html_document
 ---
+```{r setup, include = FALSE}
+suppressPackageStartupMessages(library(ggplot2))
+suppressPackageStartupMessages(library(dplyr))
+suppressPackageStartupMessages(require(cmdstanr))
+suppressPackageStartupMessages(require(grid))
+suppressPackageStartupMessages(require(gridExtra))
+verbose=FALSE
+set.seed(123)
+```
 
-# Load, preprocess and make design matrices
+# Load data, create plots and tables for EDA
 
-```{r}
+```{r, fig.width=6, fig.height=10}
 heart_df <- read.csv("data/heart.csv")
 
+# Clean data
+heart_df <- na.omit(heart_df)
+
+# EDA
+nvar = length(heart_df)
+cat_list = list("Sex", "ChestPainType", "RestingECG", "ExerciseAngina", "ST_Slope", "FastingBS")
+plot_list <- lapply(names(heart_df)[1:nvar], function(col){
+  if (col %in% cat_list){
+    t <- tableGrob(table(heart_df$HeartDisease, heart_df[[col]]))
+    arrangeGrob(t, 
+                top = textGrob(col, gp=gpar(fontsize=12)),
+                left = textGrob("Has HD?", rot = 90),
+                heights = unit(c(0.5, 0), "npc"),
+                widths = unit(c(0.6, 0), "npc"))
+  } else if(col != "HeartDisease"){
+    ggplot(heart_df, aes(x = .data[[col]], y = HeartDisease, group = HeartDisease)) +
+      geom_boxplot() +
+      labs(
+        x = col,
+        y = "Has Heart Disease?")
+  } else {
+    return (NULL)
+  }
+})
+plot_list <- plot_list[!sapply(plot_list, is.null)]
+grid.arrange(grobs = plot_list, ncol = 2)
+```
+# Preprocess data and make design matrices
+
+```{r}
 # Center and Scale the continuous variables
 heart_df$Age <- scale(heart_df$Age)
 heart_df$MaxHR <- scale(heart_df$MaxHR)
