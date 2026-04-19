@@ -3,7 +3,6 @@ title: "MH_MCMC"
 output: html_document
 ---
 
-
 # Load, preprocess and make design matrices
 
 ```{r}
@@ -44,7 +43,7 @@ log_prior <- function(beta, sigma2) {
 log_likelihood <- function(beta, X, y) {
   linear_predictor <- X %*% beta
   p <- plogis(linear_predictor)
-  
+ 
   sum(dbinom(y, size = 1, prob = p, log = TRUE))
 }
 
@@ -60,16 +59,16 @@ log_posterior <- function(beta, X, y, sigma2) {
 
 # One MH update step
 metropolis_hastings <- function(beta_current, log_post_current, X, y, step_size, sigma2) {
-  
+ 
   # propose new beta
   beta_proposal <- beta_current + rnorm(length(beta_current), 0, step_size)
-  
+ 
   # evaluate posterior at proposal
   log_post_proposal <- log_posterior(beta_proposal, X, y, sigma2)
-  
+ 
   # acceptance probability (log scale)
   log_alpha <- log_post_proposal - log_post_current
-  
+ 
   if (log(runif(1)) < log_alpha) {
     list(
       beta = beta_proposal,
@@ -88,19 +87,19 @@ metropolis_hastings <- function(beta_current, log_post_current, X, y, step_size,
 
 # Full MH sampler
 mh_mcmc <- function(X, y, n_iter, step_size, sigma2) {
-  
+ 
   n_coef <- ncol(X)
-  
+ 
   beta_samples <- matrix(NA, n_iter, n_coef)
-  
+ 
   # initialize
   beta_current <- rep(0, n_coef)
   log_post_current <- log_posterior(beta_current, X, y, sigma2)
-  
+ 
   accept_count <- 0
-  
+ 
   for (i in 1:n_iter) {
-    
+   
     step <- metropolis_hastings(
       beta_current,
       log_post_current,
@@ -108,17 +107,17 @@ mh_mcmc <- function(X, y, n_iter, step_size, sigma2) {
       step_size,
       sigma2
     )
-    
+   
     # update state
     beta_current <- step$beta
     log_post_current <- step$log_post
-    
+   
     # store sample
     beta_samples[i, ] <- beta_current
-    
+   
     accept_count <- accept_count + step$accepted
   }
-  
+ 
   list(
     samples = beta_samples,
     acceptance_rate = accept_count / n_iter
@@ -132,16 +131,16 @@ mh_mcmc <- function(X, y, n_iter, step_size, sigma2) {
 mh_predict <- function(beta_samples, X, n_skip) {
   # Drop burn-in samples (initial iterations)
   post_samples <- beta_samples[(n_skip + 1):nrow(beta_samples), ]
-  
+ 
   # Number of observations and posterior draws
   n_obs <- nrow(X)
   n_draws <- nrow(post_samples)
-  
+ 
   # Store predicted probabilities for each draw
   prob_matrix <- matrix(NA, nrow = n_obs, ncol = n_draws)
-  
+ 
   linear_preds <- X %*% t(post_samples)
-  
+ 
   # Return posterior mean probability for each observation
   rowMeans(plogis(linear_preds))
 }
@@ -150,8 +149,8 @@ mh_predict <- function(beta_samples, X, n_skip) {
 
 # Evolution of the beta coefficients (trace plots)
 ```{r}
-basic_betas <- mh_mcmc(X = basic_model, 
-                 y = heart_df$HeartDisease, 
+basic_betas <- mh_mcmc(X = basic_model,
+                 y = heart_df$HeartDisease,
                  n_iter = 20000,
                  step_size = 0.28, # Is this tuneable?
                  sigma2 = 25)$samples
@@ -176,10 +175,10 @@ ggplot2::ggplot(basic_betas_long, aes(x = iter, y = Value)) +
 
 
 
-complex_betas <- mh_mcmc(X = complex_model, 
-                 y = heart_df$HeartDisease, 
+complex_betas <- mh_mcmc(X = complex_model,
+                 y = heart_df$HeartDisease,
                  n_iter = 20000,
-                 step_size = 0.28, # Is this tuneable?
+                 step_size = 0.1, # Is this tuneable?
                  sigma2 = 25)$samples
 
 colnames(complex_betas) <- colnames(complex_model)
@@ -200,76 +199,36 @@ ggplot2::ggplot(complex_betas_long, aes(x = iter, y = Value)) +
 
 # Cross-Validation
 
-## Function definition
 ```{r}
-
-brier_score <- function(y_true, y_pred) {
-  mean((y_true - y_pred)^2)
-}
-
-
-cv_mh_mcmc <- function(data, K = 5,
+cv_mh_mcmc <- function(X, y, n_folds = 5,
                        n_iter = 2000,
                        step_size = 0.28,
                        sigma2 = 25,
                        n_skip = 500) {
-  
+ 
   set.seed(123)
-  
-  n <- nrow(data)
-  fold_id <- sample(rep(1:K, length.out = n))
-  
-  brier_folds <- numeric(K)
-  
-  for (k in 1:K) {
-    
-    # -----------------------
+ 
+  fold_id <- caret::createFolds(y, k = n_folds, list = FALSE, returnTrain = FALSE)
+ 
+  mh_oof_preds <- numeric(length(y))
+ 
+  for (k in 1:n_folds) {
+   
     # Train / test split
-    # -----------------------
-    train <- data[fold_id != k, ]
-    test  <- data[fold_id == k, ]
-    
-    # -----------------------
-    # Scaling (TRAIN ONLY)
-    # -----------------------
-    scale_var <- function(x, mean_train, sd_train) {
-      (x - mean_train) / sd_train
+    X_train <- X[fold_id != k, ]
+    X_test  <- X[fold_id == k, ]
+    y_train <- y[fold_id != k]
+    y_test  <- y[fold_id == k]
+   
+    # Scaling based on train data, then apply to test data (no leakage)
+    for (col in c("Age", "MaxHR", "Oldpeak")) {
+      mu  <- mean(X_train[, col])
+      sig <- sd(X_train[, col])
+      X_train[, col] <- (X_train[, col] - mu) / sig
+      X_test[, col] <- (X_test[, col]  - mu) / sig
     }
-    
-    train$Age     <- scale(train$Age)
-    test$Age      <- scale_var(test$Age,
-                                attr(train$Age, "scaled:center"),
-                                attr(train$Age, "scaled:scale"))
-    
-    train$MaxHR   <- scale(train$MaxHR)
-    test$MaxHR    <- scale_var(test$MaxHR,
-                                attr(train$MaxHR, "scaled:center"),
-                                attr(train$MaxHR, "scaled:scale"))
-    
-    train$Oldpeak <- scale(train$Oldpeak)
-    test$Oldpeak  <- scale_var(test$Oldpeak,
-                               attr(train$Oldpeak, "scaled:center"),
-                               attr(train$Oldpeak, "scaled:scale"))
-    
-    # -----------------------
-    # Model matrices
-    # -----------------------
-    X_train <- model.matrix(
-      ~ Age + MaxHR + Oldpeak + binary_sex + binary_angina + ST_Slope,
-      data = train
-    )
-    
-    X_test <- model.matrix(
-      ~ Age + MaxHR + Oldpeak + binary_sex + binary_angina + ST_Slope,
-      data = test
-    )
-    
-    y_train <- train$HeartDisease
-    y_test  <- test$HeartDisease
-    
-    # -----------------------
+   
     # Fit MH-MCMC
-    # -----------------------
     fit <- mh_mcmc(
       X = X_train,
       y = y_train,
@@ -277,43 +236,94 @@ cv_mh_mcmc <- function(data, K = 5,
       step_size = step_size,
       sigma2 = sigma2
     )
-    
-    # -----------------------
+   
     # Predict (posterior mean)
-    # -----------------------
-    p_hat <- mh_predict(
+    mh_oof_preds[fold_id == k] <- mh_predict(
       beta_samples = fit$samples,
       X = X_test,
       n_skip = n_skip
     )
-    
-    # -----------------------
-    # Evaluate
-    # -----------------------
-    brier_folds[k] <- brier_score(y_test, p_hat)
+   
   }
-  
+ 
   list(
-    brier_by_fold = brier_folds,
-    mean_brier = mean(brier_folds),
-    sd_brier = sd(brier_folds)
+    mh_oof_preds = mh_oof_preds
   )
 }
-
-
-
-
 ```
 
 
 
 
-## Running CV
+# Evaluating results
+
+Currently, this section works by running cross validation, then stacking all the out-of-fold predictions inot one vector, then comparing the out of fold predictions once against the ground truth. Another possible approach is to do per-fold comparisons, then average them together.
+
+### Re-loading the data
 ```{r}
-results <- cv_mh_mcmc(heart_df)
+# Reload the data without scaling to prevent data leakage during CV
+heart_df <- read.csv("data/heart.csv")
 
-results$mean_brier
-results$sd_brier
-results$brier_by_fold
+# Center and Scale the continuous variables
+heart_df$Age <- scale(heart_df$Age)
+heart_df$MaxHR <- scale(heart_df$MaxHR)
+heart_df$Oldpeak <- scale(heart_df$Oldpeak)
+
+# Recode binary variables
+heart_df$binary_sex <- ifelse(heart_df$Sex == "M", 1, 0)
+heart_df$binary_angina <- ifelse(heart_df$ExerciseAngina == "Y", 1, 0)
+
+# Select features for the basic model
+basic_model <- model.matrix(~ Age + MaxHR + Oldpeak + binary_sex + binary_angina + ST_Slope,
+                  data = heart_df)
+
+# Select features for the more complex model (interactions + non-linearity)
+complex_model <- model.matrix(~ Age*MaxHR + Oldpeak + binary_sex + binary_angina + ST_Slope + I(Age^2),
+                  data = heart_df)
+```
+
+### Run cross validation and visualize results
+```{r}
+
+basic_model_cv <- cv_mh_mcmc(basic_model, heart_df$HeartDisease)
+complex_model_cv <- cv_mh_mcmc(complex_model, heart_df$HeartDisease)
+
+
+brier_score <- function(y, p_hat) {
+  mean((y - p_hat)^2)
+}
+
+cat("Basic model Brier score: ", brier_score(heart_df$HeartDisease, basic_model_cv$mh_oof_preds), "\n")
+cat("Complex model Brier score:", brier_score(heart_df$HeartDisease, complex_model_cv$mh_oof_preds), "\n")
+
+# Calibration data
+df_cal <- rbind(
+  data.frame(p_hat = basic_model_cv$mh_oof_preds,   y = heart_df$HeartDisease, model = "MH_Basic"),
+  data.frame(p_hat = complex_model_cv$mh_oof_preds, y = heart_df$HeartDisease, model = "MH_Complex")
+)
+
+df_cal$bin <- cut(df_cal$p_hat, breaks = seq(0, 1, by = 0.1), include.lowest = TRUE)
+
+calibration <- df_cal %>%
+  group_by(model, bin) %>%
+  summarise(
+    mean_pred = mean(p_hat),
+    actual    = mean(y),
+    .groups   = "drop"
+  )
+
+# Plot
+ggplot(calibration, aes(x = mean_pred, y = actual, color = model)) +
+  geom_point(size = 3) +
+  geom_line() +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
+  labs(
+    title = "Calibration Plot (Basic vs Complex)",
+    x     = "Predicted Probability",
+    y     = "Observed Frequency"
+  ) +
+  theme_minimal()
+
 
 ```
+
