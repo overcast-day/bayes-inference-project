@@ -67,7 +67,7 @@ stan_data1 <- list(
 )
 
 #Compiling the model
-mod <- cmdstan_model("stan/VI_Model1.stan")
+mod <- cmdstan_model("stan/VI_Model1.stan", force_recompile = TRUE)
 
 #Fitting the VI
 fit_vi_1 <- mod$variational(
@@ -344,3 +344,4 @@ ggplot(calibration_all, aes(x = mean_pred, y = actual, color = model)) +
     y = "Observed Frequency"
   ) +
   theme_minimal()
+
