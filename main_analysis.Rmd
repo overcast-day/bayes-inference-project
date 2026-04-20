@@ -27,7 +27,9 @@ complex_model <- model.matrix(~ Age*MaxHR + Oldpeak + binary_sex + binary_angina
 
 ```
 
-# Define log-prior, log-likelihood and log-posterior functions
+# Metropolis-Hastings MCMC Implementation
+
+## Define log-prior, log-likelihood and log-posterior functions
 
 ```{r}
 # Gaussian prior: beta ~ N(0, sigma2)
@@ -54,7 +56,8 @@ log_posterior <- function(beta, X, y, sigma2) {
 }
 ```
 
-# Implement the Metropolis-Hastings MCMC sampler
+## Implement the Metropolis-Hastings MCMC sampler
+
 ```{r}
 
 # One MH update step
@@ -147,7 +150,7 @@ mh_predict <- function(beta_samples, X, n_skip) {
 
 ```
 
-# Evolution of the beta coefficients (trace plots)
+## Evolution of the beta coefficients (trace plots)
 ```{r}
 basic_betas <- mh_mcmc(X = basic_model,
                  y = heart_df$HeartDisease,
@@ -163,16 +166,14 @@ basic_betas_long <- reshape2::melt(basic_betas, id.vars = "iter",
                 variable.name = "Coefficient",
                 value.name = "Value")
 
+library(ggplot2)
+
 ggplot2::ggplot(basic_betas_long, aes(x = iter, y = Value)) +
   geom_line(alpha = 0.6) +
   facet_wrap(~Coefficient, scales = "free") +
   labs(title = "Trace Plots for MH-MCMC Coefficients in Basic Model",
        x = "Iteration", y = "Value") +
   theme_minimal()
-
-
-
-
 
 
 complex_betas <- mh_mcmc(X = complex_model,
@@ -197,20 +198,106 @@ ggplot2::ggplot(complex_betas_long, aes(x = iter, y = Value)) +
   theme_minimal()
 ```
 
+# Variational Inference Implementation
+
+## Fit and predict functions
+
+```{r}
+fit_vi <- function(X, y, mod, seed = 123, draws = 2000) {
+ 
+  N <- nrow(X)
+  K <- ncol(X)
+ 
+  stan_data <- list(
+    N = N,
+    K = K,
+    X = X,
+    y = y
+  )
+ 
+  fit_vi <- mod$variational(
+    data = stan_data,
+    seed = seed,
+    algorithm = "meanfield",
+    draws = draws,
+    refresh = 0,
+    output_dir = tempdir()
+  )
+ 
+  draws_df <- fit_vi$draws(format = "df")
+ 
+  # Return everything needed for prediction
+  list(
+    fit = fit_vi,
+    draws = draws_df
+  )
+}
+
+
+
+vi_predict <- function(vi_fit, X) {
+ 
+  draws_df <- vi_fit$draws
+ 
+  # Extract coefficients
+  beta_mat <- as.matrix(draws_df[, paste0("beta[", 1:ncol(X), "]")])
+  alpha <- draws_df$alpha
+ 
+  # Linear predictor
+  posterior_linpred <- sweep(
+    beta_mat %*% t(X),
+    1,
+    alpha,
+    "+"
+  )
+ 
+  # Convert to probabilities
+  posterior_prob <- plogis(posterior_linpred)
+ 
+  # Return posterior mean predictions
+  colMeans(posterior_prob)
+}
+```
+
+## Visualizing the posterior
+
+```{r}
+mod <- cmdstanr::cmdstan_model("stan/VI_Model1.stan")
+
+vi_basic_betas <- fit_vi(X = basic_model[, -1], y = heart_df$HeartDisease, mod = mod)
+
+draws <- vi_basic_betas$draws
+
+# Rename the coefficients
+var_names <- colnames(basic_model[, -1])
+beta_names <- paste0("beta[", 1:length(var_names), "]")
+colnames(draws)[colnames(draws) %in% beta_names] <- var_names
+colnames(draws)[colnames(draws) == "alpha"] <- "Intercept"
+
+# Plot the coefficient distributions
+bayesplot::mcmc_areas(
+  draws,
+  pars = c("Intercept", var_names)
+)
+```
 # Cross-Validation
 
 ```{r}
-cv_mh_mcmc <- function(X, y, n_folds = 5,
-                       n_iter = 2000,
-                       step_size = 0.28,
-                       sigma2 = 25,
-                       n_skip = 500) {
+run_cv <- function(X, y,
+                   vi_stan_mod,
+                   n_folds = 5,
+                   n_iter = 2000,
+                   step_size = 0.28,
+                   sigma2 = 25,
+                   n_skip = 500,
+                   vi_draws = 2000) {
  
   set.seed(123)
  
   fold_id <- caret::createFolds(y, k = n_folds, list = FALSE, returnTrain = FALSE)
  
   mh_oof_preds <- numeric(length(y))
+  vi_oof_preds <- numeric(length(y))
  
   for (k in 1:n_folds) {
    
@@ -229,7 +316,7 @@ cv_mh_mcmc <- function(X, y, n_folds = 5,
     }
    
     # Fit MH-MCMC
-    fit <- mh_mcmc(
+    mh_fit <- mh_mcmc(
       X = X_train,
       y = y_train,
       n_iter = n_iter,
@@ -237,17 +324,33 @@ cv_mh_mcmc <- function(X, y, n_folds = 5,
       sigma2 = sigma2
     )
    
-    # Predict (posterior mean)
+    # Fit VI
+    vi_fit <- fit_vi(
+      X = X_train[, -1],
+      y = y_train,
+      mod = vi_stan_mod,
+      draws = vi_draws
+    )
+
+   
+    # Predict from MH-MCMC
     mh_oof_preds[fold_id == k] <- mh_predict(
-      beta_samples = fit$samples,
+      beta_samples = mh_fit$samples,
       X = X_test,
       n_skip = n_skip
+    )
+   
+    # Predict from VI
+    vi_oof_preds[fold_id == k] <- vi_predict(
+      vi_fit = vi_fit,
+      X = X_test[, -1]
     )
    
   }
  
   list(
-    mh_oof_preds = mh_oof_preds
+    mh_oof_preds = mh_oof_preds,
+    vi_oof_preds = vi_oof_preds
   )
 }
 ```
@@ -284,28 +387,58 @@ complex_model <- model.matrix(~ Age*MaxHR + Oldpeak + binary_sex + binary_angina
 
 ### Run cross validation and visualize results
 ```{r}
+mod <- cmdstanr::cmdstan_model("stan/VI_Model1.stan")
 
-basic_model_cv <- cv_mh_mcmc(basic_model, heart_df$HeartDisease)
-complex_model_cv <- cv_mh_mcmc(complex_model, heart_df$HeartDisease)
+basic_model_cv <- run_cv(basic_model, heart_df$HeartDisease, mod)
+complex_model_cv <- run_cv(complex_model, heart_df$HeartDisease, mod)
 
 
 brier_score <- function(y, p_hat) {
   mean((y - p_hat)^2)
 }
 
-cat("Basic model Brier score: ", brier_score(heart_df$HeartDisease, basic_model_cv$mh_oof_preds), "\n")
-cat("Complex model Brier score:", brier_score(heart_df$HeartDisease, complex_model_cv$mh_oof_preds), "\n")
+cat("Basic model MH Brier score: ", brier_score(heart_df$HeartDisease, basic_model_cv$mh_oof_preds), "\n")
+cat("Basic model VI Brier score: ", brier_score(heart_df$HeartDisease, basic_model_cv$vi_oof_preds), "\n")
+
+cat("Complex model MH Brier score:", brier_score(heart_df$HeartDisease, complex_model_cv$mh_oof_preds), "\n")
+cat("Complex model VI Brier score:", brier_score(heart_df$HeartDisease, complex_model_cv$vi_oof_preds), "\n")
+
+library(dplyr)
 
 # Calibration data
-df_cal <- rbind(
-  data.frame(p_hat = basic_model_cv$mh_oof_preds,   y = heart_df$HeartDisease, model = "MH_Basic"),
-  data.frame(p_hat = complex_model_cv$mh_oof_preds, y = heart_df$HeartDisease, model = "MH_Complex")
+df_cal <- bind_rows(
+  data.frame(
+    p_hat = basic_model_cv$mh_oof_preds,
+    y = heart_df$HeartDisease,
+    model = "Basic",
+    method = "MH"
+  ),
+  data.frame(
+    p_hat = basic_model_cv$vi_oof_preds,
+    y = heart_df$HeartDisease,
+    model = "Basic",
+    method = "VI"
+  ),
+  data.frame(
+    p_hat = complex_model_cv$mh_oof_preds,
+    y = heart_df$HeartDisease,
+    model = "Complex",
+    method = "MH"
+  ),
+  data.frame(
+    p_hat = complex_model_cv$vi_oof_preds,
+    y = heart_df$HeartDisease,
+    model = "Complex",
+    method = "VI"
+  )
 )
 
 df_cal$bin <- cut(df_cal$p_hat, breaks = seq(0, 1, by = 0.1), include.lowest = TRUE)
 
+
+
 calibration <- df_cal %>%
-  group_by(model, bin) %>%
+  group_by(model, method, bin) %>%
   summarise(
     mean_pred = mean(p_hat),
     actual    = mean(y),
@@ -313,17 +446,28 @@ calibration <- df_cal %>%
   )
 
 # Plot
-ggplot(calibration, aes(x = mean_pred, y = actual, color = model)) +
+ggplot(calibration, aes(x = mean_pred, y = actual, color = method)) +
   geom_point(size = 3) +
   geom_line() +
   geom_abline(slope = 1, intercept = 0, linetype = "dashed") +
+  facet_wrap(~ model) +
   labs(
-    title = "Calibration Plot (Basic vs Complex)",
-    x     = "Predicted Probability",
-    y     = "Observed Frequency"
+    title = "Calibration: MH vs VI (Basic vs Complex Models)",
+    x = "Predicted Probability",
+    y = "Observed Frequency"
+  ) +
+  theme_minimal()
+```
+```{r}
+
+ggplot(df_cal, aes(x = p_hat)) +
+  geom_histogram(bins = 20, color = "white", fill = "steelblue") +
+  facet_grid(model ~ method) +
+  labs(
+    x = "Predicted probability (p_hat)",
+    y = "Count",
+    title = "Distribution of Predicted Probabilities by Model and Method"
   ) +
   theme_minimal()
 
-
 ```
-
